@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	errs "github.com/dapixio/contract-explorer/errLog"
 	"github.com/fioprotocol/fio-go"
 	"github.com/fioprotocol/fio-go/eos"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	"log"
 	"runtime"
 	"sync"
 	"time"
@@ -37,7 +37,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	var stopRequested bool
 	quitting := make(chan bool, 1)
 	notifyQuitting := func() {
-		errs.ErrChan <- "activity monitor: attempting to stop data collection threads"
+		log.Println("activity monitor: attempting to stop data collection threads")
 		if stopRequested {
 			return
 		}
@@ -49,7 +49,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 		if !stopRequested {
 			notifyQuitting()
 		}
-		errs.ErrChan <- "activity monitor: collection thread exiting"
+		log.Println("activity monitor: collection thread exiting")
 	}()
 	go func() {
 		for {
@@ -64,15 +64,15 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	}()
 	api, _, err := fio.NewConnection(nil, url)
 	if err != nil {
-		errs.ErrChan <- err.Error()
+		log.Println(err)
 		return
 	}
-	api.Header.Set("User-Agent", "fio-contract-explorer")
+	api.Header.Set("User-Agent", "fio-watch")
 	// aggressive timeout
 	//api.HttpClient.Timeout = 5*time.Second
 	knownAddresses, err = newAddressCache(api)
 	if err != nil {
-		errs.ErrChan <- err.Error()
+		log.Println(err)
 		return
 	}
 	workers := runtime.NumCPU()/2 + 1
@@ -188,7 +188,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 					summary <- res
 					if highestFetched-incoming.BlockNum > 30 {
 						slow <- true
-						errs.ErrChan <- "activity monitor: more than 15s behind processing head block, cannot keep up."
+						log.Println("activity monitor: more than 15s behind processing head block, cannot keep up.")
 					} else {
 						for _, a := range actions {
 							if stopRequested {
@@ -223,7 +223,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	lastHeartBeat := time.Now()
 	tickApi, _, _ := fio.NewConnection(nil, api.BaseURL)
 	//tickApi.HttpClient.Timeout = time.Second
-	tickApi.Header.Set("User-Agent", "fio-contract-explorer")
+	tickApi.Header.Set("User-Agent", "fio-watch")
 	for {
 		select {
 		case <-quitting:
@@ -238,7 +238,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 				return
 			}
 			if lastHeartBeat.Before(time.Now().Add(-90 * time.Second)) {
-				errs.ErrChan <- "activity monitor: detected main window inactive, stopping workers"
+				log.Println("activity monitor: detected main window inactive, stopping workers")
 				stopRequested = true
 				go notifyQuitting()
 				return
@@ -298,7 +298,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 func getInfo(api *fio.API) (head uint32, lib uint32, ok bool) {
 	info, err := api.GetInfo()
 	if err != nil {
-		errs.ErrChan <- err.Error()
+		log.Println(err)
 		return 0, 0, false
 	}
 	return info.HeadBlockNum, info.LastIrreversibleBlockNum, true
@@ -311,7 +311,7 @@ func getBlock(fetchQueue chan uint32, quit chan bool, blockResult chan *eos.Bloc
 	if err != nil {
 		return
 	}
-	api.Header.Set("User-Agent", "fio-contract-explorer")
+	api.Header.Set("User-Agent", "fio-watch")
 	//api.HttpClient.Timeout = time.Duration(4) * time.Second
 	var stopRequested bool
 	done := make(chan bool, 1)
@@ -347,7 +347,7 @@ func getBlock(fetchQueue chan uint32, quit chan bool, blockResult chan *eos.Bloc
 			}
 			resp, err := api.GetBlockByNum(block)
 			if err != nil {
-				errs.ErrChan <- err.Error()
+				log.Println(err)
 				time.Sleep(500 * time.Millisecond)
 				if stopRequested {
 					return
