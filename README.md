@@ -1,6 +1,8 @@
 # fio-watch
 
-Just a simple near-real-time monitor of FIO transactions. Intended for use on something like a Raspberry Pi or Android
+![fio-watch screenshot](doc/screenshot.png)
+
+Just a simple near-real-time (GUI) monitor of FIO transactions. Intended for use on something like a Raspberry Pi or Android
 tablet for watching transactions. It is *not* finished or ready for use. This is pre-alpha quality.transactions
 
 Note also:
