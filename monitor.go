@@ -58,21 +58,6 @@ func (b BlockSummarys) ToValues() (v []chart.Value) {
 	style := chart.StyleTextDefaults()
 	style.Padding = chart.Box{4, 4, 4, 4, true}
 	style.FontSize = 10
-	//switch true {
-	//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width > 1200:
-	//	style.FontSize = 14
-	//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width < 900:
-	//	style.FontSize = 8
-	//default:
-	//	style.FontSize = 12
-	//}
-	//red, green, blue, _ := fyne.CurrentApp().Settings().Theme().TextColor().RGBA()
-	//style.FontColor = drawing.Color{
-	//	R: uint8(red),
-	//	G: uint8(green),
-	//	B: uint8(blue),
-	//	A: 255,
-	//}
 	style.FontColor = drawing.Color{
 		R: 255,
 		G: 255,

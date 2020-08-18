@@ -14,7 +14,6 @@ import (
 )
 
 var font = func() *truetype.Font {
-	//font, err := truetype.Parse(theme.DefaultTextFont().Content())
 	font, err := truetype.Parse(theme.TextMonospaceFont().Content())
 	if err != nil {
 		fmt.Println(err)
@@ -82,7 +81,6 @@ func LineChart(summary BlockSummarys, lightTheme bool, w int, h int) []byte {
 		Width:  w,
 		Font:   font,
 		Series: []chart.Series{
-			//chart.TimeSeries{
 			chart.TimeSeries{
 				Style:   style,
 				XValues: xv,

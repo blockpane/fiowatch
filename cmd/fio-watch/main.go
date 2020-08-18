@@ -18,8 +18,6 @@ import (
 	"golang.org/x/text/message"
 	"log"
 	"math"
-	"runtime"
-	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -38,15 +36,6 @@ func main() {
 	go func() {
 		for e := range ErrChan {
 			log.Println(e)
-		}
-	}()
-
-	// no, just no.
-	go func(){
-		for {
-			time.Sleep(2*time.Minute)
-			runtime.GC()
-			debug.FreeOSMemory()
 		}
 	}()
 
@@ -101,7 +90,6 @@ func main() {
 			heartBeat <- time.Now()
 		}
 	}()
-	//runningSlow := false
 	runningSlow := time.Now().Add(-time.Second)
 	runningSlowChan := make(chan bool)
 	go func() {
@@ -135,7 +123,6 @@ func main() {
 			close(stopFetching)
 		}
 		monitorWindow.Close()
-		//Win.RequestFocus()
 	}
 	monitorWindow.SetOnClosed(func() {
 		dialog.NewInformation("Exiting", "Stopping collection threads, standby.", monitorWindow)
@@ -165,7 +152,6 @@ func main() {
 
 	chartVals := make([]*monitor.BlockSummary, 0)
 
-	//detailsRows := newDetails(32)
 	detailsGrid := fyne.NewContainerWithLayout(layout.NewGridLayout(5))
 	detailsBusy := false
 	detailsGridContent := monitor.NewDetailsContent()
@@ -332,7 +318,6 @@ func main() {
 	}()
 
 	pieSize := func() int {
-		//return (me.Driver().AllWindows()[0].Canvas().Size().Width * 25) / 100
 		return 256
 		//switch true {
 		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 400:
@@ -354,7 +339,6 @@ func main() {
 
 	allDone.Add(1)
 	go func() {
-		//defer log.Println("go routine sorting action summaries exited.")
 		defer allDone.Done()
 		if !monitorWindow.FullScreen() {
 			monitorWindow.Resize(fyne.NewSize(1440, 800))
@@ -405,16 +389,8 @@ func main() {
 
 	allDone.Add(1)
 	go func() {
-		//defer log.Println("go routine refreshing main window exited.")
 		defer allDone.Done()
 		<-wRunning
-		//if !monitorWindow.FullScreen() {
-		//	monitorWindow.Resize(fyne.NewSize(1440, 800))
-		//	monitorWindow.CenterOnScreen()
-		//	myWidth = 1440
-		//} else {
-		//	myWidth = monSize().Width
-		//}
 		var pieHasLogo bool
 		pieContainer := fyne.NewContainerWithLayout(layout.NewFixedGridLayout(fyne.NewSize(pieSize(), pieSize())))
 		timeLine := canvas.NewImageFromResource(fyne.NewStaticResource("timeline", monitor.LineChart(getSummary(), MonitorLightTheme, myWidth/5*4+((myWidth/5*4)/2), pieSize()+(pieSize()/2))))
@@ -621,18 +597,7 @@ func main() {
 				break
 			}
 		}
-		//time.Sleep(400 * time.Millisecond)
 		th := prettyfyne.ExampleDracula
-		//switch true {
-		//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width < 450:
-		//	th.TextSize = 12
-		//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width > 700:
-		//	th.TextSize = 18
-		//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width > 600:
-		//	th.TextSize = 16
-		//default:
-		//	th.TextSize = 14
-		//}
 		th.TextSize = 13
 		fmt.Println("size:", th.TextSize, fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width)
 		fyne.CurrentApp().Settings().SetTheme(th.ToFyneTheme())
