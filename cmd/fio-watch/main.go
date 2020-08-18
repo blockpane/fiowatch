@@ -338,13 +338,7 @@ func main() {
 	allDone.Add(1)
 	go func() {
 		defer allDone.Done()
-		if !monitorWindow.FullScreen() {
-			monitorWindow.Resize(fyne.NewSize(1440, 800))
-			monitorWindow.CenterOnScreen()
-			myWidth = 1440
-		} else {
-			myWidth = monSize().Width
-		}
+
 		<-wRunning
 		updateChartChan <- true
 		time.Sleep(2 * time.Second)
@@ -601,7 +595,9 @@ func main() {
 		fyne.CurrentApp().Settings().SetTheme(th.ToFyneTheme())
 	}()
 
-	//monitorWindow.SetFullScreen(true)
+	monitorWindow.Resize(fyne.NewSize(1440, 900))
+	monitorWindow.CenterOnScreen()
+
 	monitorWindow.SetMaster()
 	monitorWindow.ShowAndRun()
 }
