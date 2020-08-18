@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/fioprotocol/fio-go"
 	"github.com/fioprotocol/fio-go/eos"
@@ -32,7 +33,10 @@ func (t ActionRow) String() string {
 	return string(t.TxDetail)
 }
 
-var knownAddresses *addressCache
+var (
+	knownAddresses *addressCache
+	abis *abiCache
+)
 
 
 func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string, p2pnode string) {
@@ -69,9 +73,13 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 		log.Println(err)
 		return
 	}
+	abis, err = newAbiCache(api)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
 	api.Header.Set("User-Agent", "fio-watch")
-	// aggressive timeout
-	//api.HttpClient.Timeout = 5*time.Second
 	knownAddresses, err = newAddressCache(api)
 	if err != nil {
 		log.Println(err)
@@ -475,10 +483,12 @@ func blockToSummary(block *eos.BlockResp, api *fio.API) (*BlockSummary, []*Actio
 				txDetail := bytes.NewBuffer(nil)
 				txid, _ := tx.Transaction.Packed.ID()
 				txDetail.Write([]byte(fmt.Sprintf("Details for Action # %d of TXID %s in block %d\n\n", ai, hex.EncodeToString(txid), block.BlockNum)))
-				//summary.Actions[string(action.Name)] = summary.Actions[string(action.Name)] + 1
 				sums <- string(action.Name)
-				// FIXME: don't do this, build a cache of the ABIs and use that instead!!!
-				m, _ := api.ABIBinToJSON(action.Account, eos.Name(action.Name), utx.Actions[ai].HexData)
+				m, err := abis.Decode(action.Account, action.Name, utx.Actions[ai].HexData)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
 				if m["content"] != nil {
 					m["content"] = "... hidden ..."
 				}
@@ -589,6 +599,31 @@ func newAbiCache(api *fio.API) (*abiCache, error) {
 		return nil, err
 	}
 	return a, nil
+}
+
+func (a *abiCache) Decode(account eos.AccountName, action eos.ActionName, b []byte) (msi map[string]interface{}, err error) {
+	if a.abis[account] == nil {
+		gabi, err := a.api.GetABI(account)
+		if err != nil {
+			return nil, err
+		}
+		a.Lock()
+		a.abis[gabi.AccountName] = &gabi.ABI
+		a.Unlock()
+	}
+	j, err := a.abis[account].DecodeAction(b, action)
+	if err != nil {
+		return nil, err
+	}
+	msi = make(map[string]interface{})
+	err = json.Unmarshal(j, &msi)
+	if err != nil {
+		return nil, err
+	}
+	if len(msi) == 0 {
+		return nil, errors.New("abi decode resulted in empty struct")
+	}
+	return msi, nil
 }
 
 
