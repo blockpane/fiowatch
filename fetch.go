@@ -35,9 +35,8 @@ func (t ActionRow) String() string {
 
 var (
 	knownAddresses *addressCache
-	abis *abiCache
+	abis           *abiCache
 )
-
 
 func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string, p2pnode string) {
 	var stopRequested bool
@@ -587,7 +586,7 @@ func (a *addressCache) Get(actor string) (result string) {
 type abiCache struct {
 	sync.RWMutex
 	abis map[eos.AccountName]*eos.ABI
-	api *fio.API
+	api  *fio.API
 }
 
 func newAbiCache(api *fio.API) (*abiCache, error) {
@@ -625,5 +624,3 @@ func (a *abiCache) Decode(account eos.AccountName, action eos.ActionName, b []by
 	}
 	return msi, nil
 }
-
-

@@ -23,10 +23,9 @@ import (
 	"time"
 )
 
-
 var (
 	MonitorLightTheme bool
-	P2pNode, Uri string
+	P2pNode, Uri      string
 )
 
 func main() {
@@ -62,7 +61,6 @@ func main() {
 
 	me := app.NewWithID("org.frameloss.fiowatch")
 	monitorWindow := me.NewWindow(monitorTitle)
-
 
 	// channels used for getting data from the chain:
 	stopFetching := make(chan bool, 1)
@@ -592,7 +590,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(50*time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			if fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Content().Visible() {
 				break
 			}
