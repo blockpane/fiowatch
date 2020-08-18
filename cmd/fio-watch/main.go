@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/canvas"
@@ -17,19 +18,21 @@ import (
 	"golang.org/x/text/message"
 	"log"
 	"math"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
 )
 
-const monitorTitle = "FIO Block Activity Summary"
 
 var (
 	MonitorLightTheme bool
-	Uri string
+	P2pNode, Uri string
 )
 
 func main() {
+	monitorTitle := "FIO Block Activity Summary"
 
 	ErrChan := make(chan string)
 	go func() {
@@ -38,16 +41,39 @@ func main() {
 		}
 	}()
 
+	// no, just no.
+	go func(){
+		for {
+			time.Sleep(2*time.Minute)
+			runtime.GC()
+			debug.FreeOSMemory()
+		}
+	}()
+
+	var impolite bool
+
+	flag.BoolVar(&impolite, "impolite", false, "use get_block instead of P2P, results in lots of API traffic")
+	flag.StringVar(&P2pNode, "p2p", "127.0.0.1:3856", "nodeos P2P endpoint")
 	flag.StringVar(&Uri, "u", "http://127.0.0.1:8888", "nodeos API endpoint")
 	flag.Parse()
-
-	me := app.NewWithID("org.frameloss.fiowatch")
-	monitorWindow := me.NewWindow(monitorTitle)
-	api, _, err := fio.NewConnection(nil, Uri)
+	if impolite {
+		P2pNode = ""
+	}
+	api, opts, err := fio.NewConnection(nil, Uri)
 	if err != nil {
 		panic(err)
 	}
 	api.Header.Set("User-Agent", "fio-watch")
+	switch opts.ChainID.String() {
+	case fio.ChainIdTestnet:
+		monitorTitle = monitorTitle + " (Testnet)"
+	case fio.ChainIdMainnet:
+		monitorTitle = monitorTitle + " (Mainnet)"
+	}
+
+	me := app.NewWithID("org.frameloss.fiowatch")
+	monitorWindow := me.NewWindow(monitorTitle)
+
 
 	// channels used for getting data from the chain:
 	stopFetching := make(chan bool, 1)
@@ -92,7 +118,7 @@ func main() {
 	}()
 
 	wbCounter := 1
-	go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL)
+	go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL, P2pNode)
 
 	wRunning := make(chan bool, 1)
 
@@ -130,7 +156,7 @@ func main() {
 	info := widget.NewLabelWithStyle("Showing last 0 Blocks", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	blockInfo := widget.NewLabel("")
 	infoBox := widget.NewHBox(layout.NewSpacer(), info, blockInfo, layout.NewSpacer())
-	myWidth := 1100
+	myWidth := monSize().Width
 	var pieReady bool
 	updateChartChan := make(chan bool)
 
@@ -251,7 +277,7 @@ func main() {
 				}
 				if !stalled {
 					wbCounter = wbCounter + 1
-					go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL)
+					go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL, P2pNode)
 				}
 
 			case <-stalledTicker.C:
@@ -279,7 +305,7 @@ func main() {
 							}
 							time.Sleep(2 * time.Second)
 							wbCounter = wbCounter + 1
-							go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL)
+							go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL, P2pNode)
 						}
 					}()
 					innerWg.Wait()
@@ -305,15 +331,17 @@ func main() {
 		}
 	}()
 
-	pieSize := func() (w int) {
+	pieSize := func() int {
+		//return (me.Driver().AllWindows()[0].Canvas().Size().Width * 25) / 100
 		return 256
-		// newSize := myWidth / 6
-		// if newSize < 138 {
-		// 	return 128
-		// } else if newSize > 384 {
-		// 	return 384
-		// }
-		// return newSize - 20
+		//switch true {
+		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 400:
+		//	return 128
+		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 600:
+		//	return 192
+		//default:
+		//	return 256
+		//}
 	}
 
 	sortedCopy := make([]*monitor.BlockSummary, 0)
@@ -328,6 +356,13 @@ func main() {
 	go func() {
 		//defer log.Println("go routine sorting action summaries exited.")
 		defer allDone.Done()
+		if !monitorWindow.FullScreen() {
+			monitorWindow.Resize(fyne.NewSize(1440, 800))
+			monitorWindow.CenterOnScreen()
+			myWidth = 1440
+		} else {
+			myWidth = monSize().Width
+		}
 		<-wRunning
 		updateChartChan <- true
 		time.Sleep(2 * time.Second)
@@ -373,13 +408,13 @@ func main() {
 		//defer log.Println("go routine refreshing main window exited.")
 		defer allDone.Done()
 		<-wRunning
-		if !monitorWindow.FullScreen() {
-			monitorWindow.Resize(fyne.NewSize(1440, 800))
-			monitorWindow.CenterOnScreen()
-			myWidth = 1440
-		} else {
-			myWidth = monSize().Width
-		}
+		//if !monitorWindow.FullScreen() {
+		//	monitorWindow.Resize(fyne.NewSize(1440, 800))
+		//	monitorWindow.CenterOnScreen()
+		//	myWidth = 1440
+		//} else {
+		//	myWidth = monSize().Width
+		//}
 		var pieHasLogo bool
 		pieContainer := fyne.NewContainerWithLayout(layout.NewFixedGridLayout(fyne.NewSize(pieSize(), pieSize())))
 		timeLine := canvas.NewImageFromResource(fyne.NewStaticResource("timeline", monitor.LineChart(getSummary(), MonitorLightTheme, myWidth/5*4+((myWidth/5*4)/2), pieSize()+(pieSize()/2))))
@@ -580,11 +615,30 @@ func main() {
 	}()
 
 	go func() {
-		time.Sleep(100 * time.Millisecond)
-		fyne.CurrentApp().Settings().SetTheme(prettyfyne.ExampleDracula.ToFyneTheme())
+		for {
+			time.Sleep(50*time.Millisecond)
+			if fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Content().Visible() {
+				break
+			}
+		}
+		//time.Sleep(400 * time.Millisecond)
+		th := prettyfyne.ExampleDracula
+		//switch true {
+		//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width < 450:
+		//	th.TextSize = 12
+		//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width > 700:
+		//	th.TextSize = 18
+		//case fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width > 600:
+		//	th.TextSize = 16
+		//default:
+		//	th.TextSize = 14
+		//}
+		th.TextSize = 13
+		fmt.Println("size:", th.TextSize, fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width)
+		fyne.CurrentApp().Settings().SetTheme(th.ToFyneTheme())
 	}()
 
-	monitorWindow.SetFullScreen(true)
+	//monitorWindow.SetFullScreen(true)
 	monitorWindow.SetMaster()
 	monitorWindow.ShowAndRun()
 }

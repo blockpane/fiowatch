@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/fioprotocol/fio-go"
 	"github.com/fioprotocol/fio-go/eos"
+	"github.com/fioprotocol/fio-go/eos/p2p"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"log"
@@ -33,7 +34,8 @@ func (t ActionRow) String() string {
 
 var knownAddresses *addressCache
 
-func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string) {
+
+func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string, p2pnode string) {
 	var stopRequested bool
 	quitting := make(chan bool, 1)
 	notifyQuitting := func() {
@@ -62,7 +64,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 			}
 		}
 	}()
-	api, _, err := fio.NewConnection(nil, url)
+	api, opts, err := fio.NewConnection(nil, url)
 	if err != nil {
 		log.Println(err)
 		return
@@ -79,7 +81,11 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	if workers > 8 {
 		workers = 8
 	}
-	fetchTick := time.NewTicker(500 * time.Millisecond)
+	tickTime := 500
+	if p2pnode != "" {
+		tickTime = 6000
+	}
+	fetchTick := time.NewTicker(time.Duration(tickTime) * time.Millisecond)
 	fetchQueue := make(chan uint32)
 	blockResult := make(chan *eos.BlockResp)
 	//var pending bool
@@ -144,25 +150,70 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 
 	// workers to fetch blocks, expect to need ability for multiple simultaneously
 	wg := &sync.WaitGroup{}
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
-	}
+	switch p2pnode {
+	// impolite mode: hammer the API, no p2p info provided.
+	case "":
+		wg.Add(workers)
+		for i := 0; i < workers; i++ {
+			go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
+		}
 
-	go func() {
-		// try to recover if our workers die ....
-		for {
-			wg.Wait()
-			time.Sleep(time.Second)
-			if stopRequested {
+		go func() {
+			// try to recover if our workers die ....
+			for {
+				wg.Wait()
+				time.Sleep(time.Second)
+				if stopRequested {
+					return
+				}
+				wg.Add(workers)
+				for i := 0; i < workers; i++ {
+					go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
+				}
+			}
+		}()
+	// allow p2p node to send blocks:
+	default:
+		go func() {
+			client := p2p.NewClient(
+				p2p.NewOutgoingPeer(p2pnode, "fiowatch", &p2p.HandshakeInfo{
+					ChainID:      opts.ChainID,
+					HeadBlockNum: 1,
+				}),
+				false,
+			)
+			blockHandler := p2p.HandlerFunc(func(envelope *p2p.Envelope) {
+				name, _ := envelope.Packet.Type.Name()
+				switch name {
+				case "SignedBlock":
+					block := &eos.SignedBlock{}
+					err := eos.UnmarshalBinary(envelope.Packet.Payload, block)
+					if err != nil {
+						fmt.Println(string(envelope.Packet.Payload))
+						log.Println(err)
+						return
+					}
+					id, _ := block.BlockID()
+					_, prefix, _ := fio.GetRefBlockFor(block.BlockNumber(), id.String())
+					head <- int(block.BlockNumber())
+					blockResult <- &eos.BlockResp{
+						SignedBlock:    *block,
+						ID:             id,
+						BlockNum:       block.BlockNumber(),
+						RefBlockPrefix: prefix,
+					}
+					block = nil
+				}
+			})
+			client.RegisterHandler(blockHandler)
+			e := client.Start()
+			if e != nil {
+				log.Println(e)
+				notifyQuitting()
 				return
 			}
-			wg.Add(workers)
-			for i := 0; i < workers; i++ {
-				go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
-			}
-		}
-	}()
+		}()
+	}
 
 	resultAlive := time.Now()
 	go func() {
@@ -186,7 +237,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 				go func() {
 					res, actions := blockToSummary(incoming, api)
 					summary <- res
-					if highestFetched-incoming.BlockNum > 30 {
+					if highestFetched-incoming.BlockNum > 30 && p2pnode == "" {
 						slow <- true
 						log.Println("activity monitor: more than 15s behind processing head block, cannot keep up.")
 					} else {
@@ -197,6 +248,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 							ref := &a
 							cp := *ref
 							details <- cp
+							ref, a = nil, nil
 						}
 					}
 					resultAlive = time.Now()
@@ -260,12 +312,12 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 						}
 						head <- int(h)
 						lib <- int(l)
-						switch {
-						case h-highestFetched > 120:
+						switch true {
+						case h-highestFetched > 120 && p2pnode == "":
 							// we just started, don't try to fetch more than needed
 							highestFetched = h - 1
 							fetchQueue <- h
-						case h-highestFetched > 0:
+						case h-highestFetched > 0 && p2pnode == "":
 							for i := highestFetched; i <= h; i++ {
 								if stopRequested {
 									return
@@ -425,6 +477,7 @@ func blockToSummary(block *eos.BlockResp, api *fio.API) (*BlockSummary, []*Actio
 				txDetail.Write([]byte(fmt.Sprintf("Details for Action # %d of TXID %s in block %d\n\n", ai, hex.EncodeToString(txid), block.BlockNum)))
 				//summary.Actions[string(action.Name)] = summary.Actions[string(action.Name)] + 1
 				sums <- string(action.Name)
+				// FIXME: don't do this, build a cache of the ABIs and use that instead!!!
 				m, _ := api.ABIBinToJSON(action.Account, eos.Name(action.Name), utx.Actions[ai].HexData)
 				if m["content"] != nil {
 					m["content"] = "... hidden ..."
@@ -458,6 +511,7 @@ func blockToSummary(block *eos.BlockResp, api *fio.API) (*BlockSummary, []*Actio
 					Used:     p.Sprintf("%s%d bytes, %d µs%s", usedPrefix, len(action.HexData), tx.TransactionReceiptHeader.CPUUsageMicroSeconds, usedPrefix),
 				}
 			}
+			utx = nil
 		}(i)
 	}
 	actionWg.Wait()
@@ -519,3 +573,22 @@ func (a *addressCache) Get(actor string) (result string) {
 	}
 	return
 }
+
+type abiCache struct {
+	sync.RWMutex
+	abis map[eos.AccountName]*eos.ABI
+	api *fio.API
+}
+
+func newAbiCache(api *fio.API) (*abiCache, error) {
+	var err error
+	a := &abiCache{}
+	a.api = api
+	a.abis, err = api.AllABIs()
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+
