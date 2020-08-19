@@ -409,6 +409,14 @@ func main() {
 		))
 		pie.Image, _, _ = fioassets.NewFioLogo()
 		monitorWindow.SetContent(content)
+		// give the API a few seconds to pull ABIs before we start.
+		for {
+			time.Sleep(200*time.Millisecond)
+			if monitor.Abis != nil && monitor.Abis.Ready {
+				break
+			}
+		}
+
 		pieContainer.AddObject(pie)
 		extraInfo := []fyne.CanvasObject{widget.NewLabel(" ")}
 		var eiRefresh bool

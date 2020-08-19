@@ -35,7 +35,7 @@ func (t ActionRow) String() string {
 
 var (
 	knownAddresses *addressCache
-	abis           *abiCache
+	Abis           *abiCache
 )
 
 func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string, p2pnode string) {
@@ -72,7 +72,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 		log.Println(err)
 		return
 	}
-	abis, err = newAbiCache(api)
+	Abis, err = newAbiCache(api)
 	if err != nil {
 		log.Println(err)
 		return
@@ -483,7 +483,7 @@ func blockToSummary(block *eos.BlockResp, api *fio.API) (*BlockSummary, []*Actio
 				txid, _ := tx.Transaction.Packed.ID()
 				txDetail.Write([]byte(fmt.Sprintf("Details for Action # %d of TXID %s in block %d\n\n", ai, hex.EncodeToString(txid), block.BlockNum)))
 				sums <- string(action.Name)
-				m, err := abis.Decode(action.Account, action.Name, utx.Actions[ai].HexData)
+				m, err := Abis.Decode(action.Account, action.Name, utx.Actions[ai].HexData)
 				if err != nil {
 					log.Println(err)
 					continue
@@ -587,6 +587,7 @@ type abiCache struct {
 	sync.RWMutex
 	abis map[eos.AccountName]*eos.ABI
 	api  *fio.API
+	Ready bool
 }
 
 func newAbiCache(api *fio.API) (*abiCache, error) {
@@ -597,6 +598,7 @@ func newAbiCache(api *fio.API) (*abiCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.Ready = true
 	return a, nil
 }
 
