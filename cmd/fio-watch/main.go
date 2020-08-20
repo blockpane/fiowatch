@@ -16,9 +16,14 @@ import (
 	"github.com/frameloss/prettyfyne"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	"image/color"
 	"log"
 	"math"
+	"net"
+	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,29 +43,48 @@ func main() {
 		}
 	}()
 
-	var impolite bool
+	var (
+		api *fio.API
+		opts *fio.TxOptions
+		err error
+		impolite bool
+		fullscreen bool
+	)
 
 	flag.BoolVar(&impolite, "impolite", false, "use get_block instead of P2P, results in lots of API traffic")
+	flag.BoolVar(&fullscreen, "full", false, "start in full-screen mode")
 	flag.StringVar(&P2pNode, "p2p", "127.0.0.1:3856", "nodeos P2P endpoint")
-	flag.StringVar(&Uri, "u", "http://127.0.0.1:8888", "nodeos API endpoint")
+	flag.StringVar(&Uri, "u", "", "nodeos API endpoint")
 	flag.Parse()
 	if impolite {
 		P2pNode = ""
 	}
-	api, opts, err := fio.NewConnection(nil, Uri)
-	if err != nil {
-		panic(err)
-	}
-	api.Header.Set("User-Agent", "fio-watch")
-	switch opts.ChainID.String() {
-	case fio.ChainIdTestnet:
-		monitorTitle = monitorTitle + " (Testnet)"
-	case fio.ChainIdMainnet:
-		monitorTitle = monitorTitle + " (Mainnet)"
-	}
 
 	me := app.NewWithID("org.frameloss.fiowatch")
 	monitorWindow := me.NewWindow(monitorTitle)
+
+	go func() {
+		for {
+			if Uri == "" {
+				time.Sleep(time.Second)
+				continue
+			}
+			api, opts, err = fio.NewConnection(nil, Uri)
+			if err != nil {
+				panic(err)
+			}
+			api.Header.Set("User-Agent", "fio-watch")
+			switch opts.ChainID.String() {
+			case fio.ChainIdTestnet:
+				monitorTitle = monitorTitle + " (Testnet)"
+			case fio.ChainIdMainnet:
+				monitorTitle = monitorTitle + " (Mainnet)"
+			}
+			monitorWindow.SetTitle(monitorTitle)
+			break
+		}
+	}()
+
 
 	// channels used for getting data from the chain:
 	stopFetching := make(chan bool, 1)
@@ -104,10 +128,17 @@ func main() {
 	}()
 
 	wbCounter := 1
-	go monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL, P2pNode)
+	go func() {
+		for {
+			if api != nil {
+				break
+			}
+			time.Sleep(time.Second)
+		}
+		monitor.WatchBlocks(summaryChan, detailsChan, stopFetching, headChan, libChan, fetchDiedChan, heartBeat, runningSlowChan, api.BaseURL, P2pNode)
+	}()
 
 	wRunning := make(chan bool, 1)
-
 	var notified bool
 	notifyQuit := func() {
 		closed = true
@@ -145,7 +176,17 @@ func main() {
 	var pieReady bool
 	updateChartChan := make(chan bool)
 
-	startBlock := int(api.GetCurrentBlock())
+	var startBlock int
+	go func() {
+		for {
+			if api == nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			startBlock = int(api.GetCurrentBlock())
+			break
+		}
+	}()
 	ticks := 360
 
 	chartVals := make([]*monitor.BlockSummary, 0)
@@ -206,6 +247,18 @@ func main() {
 	go func() {
 		defer allDone.Done()
 		<-wRunning
+		if Uri == "" {
+			go func() {
+				api, P2pNode = promptForUrl()
+				Uri = api.BaseURL
+			}()
+		}
+		for {
+			if api != nil {
+				break
+			}
+			time.Sleep(time.Second)
+		}
 		stalledTicker := time.NewTicker(15 * time.Second)
 		stalled := false
 		for {
@@ -599,13 +652,113 @@ func main() {
 		}
 		th := prettyfyne.ExampleDracula
 		th.TextSize = 13
-		fmt.Println("size:", th.TextSize, fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size().Width)
+		th.PlaceHolderColor = color.RGBA{
+			R: 128,
+			G: 128,
+			B: 128,
+			A: 255,
+		}
+		th.IconColor = th.PlaceHolderColor
+		th.FocusColor = color.RGBA{
+			R: 72,
+			G: 72,
+			B: 96,
+			A: 255,
+		}
+		th.HoverColor = color.RGBA{
+			R: 24,
+			G: 24,
+			B: 36,
+			A: 255,
+		}
 		fyne.CurrentApp().Settings().SetTheme(th.ToFyneTheme())
 	}()
 
-	monitorWindow.Resize(fyne.NewSize(1440, 900))
+	monitorWindow.Resize(fyne.NewSize(1200, 500))
+	if fullscreen {
+		monitorWindow.SetFullScreen(true)
+	}
 	monitorWindow.CenterOnScreen()
-
 	monitorWindow.SetMaster()
 	monitorWindow.ShowAndRun()
+}
+
+func promptForUrl() (api *fio.API, p2pAddr string) {
+	p2pInput := widget.NewEntry()
+	p2pInput.SetPlaceHolder("nodeos:9876")
+
+	uriInput := widget.NewEntry()
+	uriInput.SetPlaceHolder("http://nodeos:8888")
+	uriInput.OnChanged = func(s string) {
+		if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+			if u := strings.Split(s, "//"); len(u) > 1 {
+				h := strings.Split(u[1], ":")
+				p2pInput.SetText(h[0]+":9876")
+			}
+		}
+	}
+
+	errLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	good := make(chan interface{}, 1)
+	submit := &widget.Button{}
+	submit = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), func(){
+		errLabel.SetText("Please wait ...")
+		submit.Disable()
+		defer submit.Enable()
+		_, err := url.Parse(uriInput.Text)
+		if err != nil {
+			errLabel.SetText(fmt.Sprintf("Invalid url: %s", err.Error()))
+			return
+		}
+		api, _, err = fio.NewConnection(nil, uriInput.Text)
+		if err != nil {
+			errLabel.SetText(fmt.Sprintf("Couldn't connect to nodeos API: %s", err.Error()))
+			return
+		}
+		p := strings.Split(p2pInput.Text, ":")
+		if len(p) != 2 {
+			errLabel.SetText("p2p address should be in the format host:port")
+			return
+		}
+		ips, err := net.LookupHost(p[0])
+		if err != nil {
+			errLabel.SetText(fmt.Sprintf("Couldn't resolve p2p host: %s", err.Error()))
+			return
+		}
+		if len(ips) == 0 {
+			errLabel.SetText(fmt.Sprintf("could not resolve %q to an IPv4 addres", p[0]))
+			return
+		}
+		var port int64
+		port, err = strconv.ParseInt(p[1], 10, 32)
+		if err != nil {
+			errLabel.SetText(fmt.Sprintf("p2p port invalid: %s", err.Error()))
+			return
+		}
+		dest := net.ParseIP(ips[0])
+		t := &net.TCPConn{}
+		t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP:  dest, Port: int(port)})
+		if err != nil {
+			errLabel.SetText(fmt.Sprintf("could not connect to p2p service: %s", err.Error()))
+			return
+		}
+		t.Close()
+		errLabel.SetText("connected!")
+		close(good)
+	})
+
+	box := widget.NewVBox(
+		widget.NewForm(
+			widget.NewFormItem("API", uriInput),
+			widget.NewFormItem("P2P Address", p2pInput),
+		),
+		widget.NewHBox(layout.NewSpacer(), submit, layout.NewSpacer()),
+		errLabel,
+	)
+	pop := widget.NewModalPopUp(box, fyne.CurrentApp().Driver().AllWindows()[0].Canvas())
+	pop.Show()
+	<-good
+	pop.Hide()
+	return api, p2pInput.Text
 }

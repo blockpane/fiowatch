@@ -20,7 +20,7 @@ ABIs and so on, but shouldn't flood a node with API calls to keep up with the he
 
 ## Known Issues - WIP
 
-* Specifying server can only be done via command line flags, not convenient for a GUI.
+* Need ability to save connection settings.
 * There is a resource leak that can consume a lot of memory after a few thousand transactions.
 * More than a few dozen transactions / block can slow the app down.
 
