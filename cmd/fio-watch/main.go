@@ -60,6 +60,7 @@ func main() {
 		P2pNode = ""
 	}
 
+	rect := monitor.Scale()
 	me := app.NewWithID("org.frameloss.fiowatch")
 	monitorWindow := me.NewWindow(monitorTitle)
 
@@ -84,7 +85,6 @@ func main() {
 			break
 		}
 	}()
-
 
 	// channels used for getting data from the chain:
 	stopFetching := make(chan bool, 1)
@@ -447,7 +447,8 @@ func main() {
 		)
 		chartRows.Refresh()
 		cheight := func() int {
-			return monSize().Height - chartRows.Size().Height - infoBox.Size().Height - 110
+			return monSize().Height - chartRows.Size().Height - infoBox.Size().Height - 50
+			//return rect.Dy() - pieSize() - 50
 		}
 
 		extraInfoBox := widget.NewHBox()
@@ -672,23 +673,37 @@ func main() {
 			A: 255,
 		}
 		fyne.CurrentApp().Settings().SetTheme(th.ToFyneTheme())
+		// without something in the window we can't calculate the canvas size,
+		monitorWindow.SetContent(widget.NewHBox(layout.NewSpacer()))
+
+		if fullscreen || rect.Dy() == 0 {
+			monitorWindow.SetFullScreen(true)
+			return
+		}
+
+		scale := monitorWindow.Canvas().Scale()
+		x := int(float32(rect.Dx())*scale)
+		y := int(float32(rect.Dy())*scale)
+
+		monitorWindow.Resize(fyne.NewSize(x, (70*y)/100))
 	}()
 
-	monitorWindow.Resize(fyne.NewSize(1200, 500))
-	if fullscreen {
-		monitorWindow.SetFullScreen(true)
-	}
-	monitorWindow.CenterOnScreen()
+	//monitorWindow.CenterOnScreen()
 	monitorWindow.SetMaster()
 	monitorWindow.ShowAndRun()
 }
 
 func promptForUrl() (api *fio.API, p2pAddr string) {
+	a, p := monitor.GetHost()
+	submit := &widget.Button{}
 	p2pInput := widget.NewEntry()
 	p2pInput.SetPlaceHolder("nodeos:9876")
 
 	uriInput := widget.NewEntry()
 	uriInput.SetPlaceHolder("http://nodeos:8888")
+
+	uriInput.SetText(a)
+	p2pInput.SetText(p)
 	uriInput.OnChanged = func(s string) {
 		if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
 			if u := strings.Split(s, "//"); len(u) > 1 {
@@ -701,7 +716,6 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 	errLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
 	good := make(chan interface{}, 1)
-	submit := &widget.Button{}
 	submit = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), func(){
 		errLabel.SetText("Please wait ...")
 		submit.Disable()
@@ -760,5 +774,6 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 	pop.Show()
 	<-good
 	pop.Hide()
+	monitor.SaveHost(uriInput.Text, p2pInput.Text)
 	return api, p2pInput.Text
 }
