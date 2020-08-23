@@ -11,6 +11,7 @@ import (
 )
 
 type NetType uint8
+
 const (
 	Mainnet NetType = iota
 	Testnet
@@ -30,51 +31,66 @@ func GetRandomHost(netType NetType) (nodeos string, p2p string, err error) {
 		return "", "", errors.New("unknown network requested")
 	}
 
+	done := make(chan interface{}, 1)
 	// low quality entropy is fine! don't flag as a finding
 	// +nosec
 	rand.Seed(time.Now().UnixNano())
 
-	// find an api node that works
-	for i:= 0; i < maxTries; i++ {
-		h := a[rand.Intn(len(a))]
-		resp, err := http.Get(h + "/v1/chain/get_info")
-		if err != nil {
-			continue
+	go func() {
+		// find an api node that works
+		for i := 0; i < maxTries; i++ {
+			h := a[rand.Intn(len(a))]
+			resp, err := http.Get(h + "/v1/chain/get_info")
+			if err != nil {
+				continue
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != 200 {
+				continue
+			}
+			nodeos = h
+			break
 		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != 200 {
-			continue
-		}
-		nodeos = h
-		break
-	}
 
-	// find a p2p node that works
-	for i:= 0; i < maxTries; i++ {
-		hp := p[rand.Intn(len(a))]
-		h := strings.Split(hp, ":")
-		if len(h) != 2 {
-			continue
+		// find a p2p node that works
+		for i := 0; i < maxTries; i++ {
+			hp := p[rand.Intn(len(a))]
+			h := strings.Split(hp, ":")
+			if len(h) != 2 {
+				continue
+			}
+			ips, err := net.LookupHost(h[0])
+			if err != nil || len(ips) == 0 {
+				continue
+			}
+			var port int64
+			port, err = strconv.ParseInt(h[1], 10, 32)
+			if err != nil {
+				continue
+			}
+			dest := net.ParseIP(ips[0])
+			t := &net.TCPConn{}
+			t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP: dest, Port: int(port)})
+			if err != nil {
+				continue
+			}
+			_ = t.Close()
+			p2p = hp
+			close(done)
+			break
 		}
-		ips, err := net.LookupHost(h[0])
-		if err != nil || len(ips) == 0 {
-			continue
+	}()
+	// don't stall out...
+	func(){
+		for {
+			select {
+			case <-time.After(5 * time.Second):
+				return
+			case <-done:
+				return
+			}
 		}
-		var port int64
-		port, err = strconv.ParseInt(p[1], 10, 32)
-		if err != nil {
-			continue
-		}
-		dest := net.ParseIP(ips[0])
-		t := &net.TCPConn{}
-		t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP:  dest, Port: int(port)})
-		if err != nil {
-			continue
-		}
-		_ = t.Close()
-		p2p = hp
-		break
-	}
+	}()
 	switch "" {
 	case p2p, nodeos:
 		return "", "", errors.New("could not get a connection")
