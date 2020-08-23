@@ -44,10 +44,10 @@ func main() {
 	}()
 
 	var (
-		api *fio.API
-		opts *fio.TxOptions
-		err error
-		impolite bool
+		api        *fio.API
+		opts       *fio.TxOptions
+		err        error
+		impolite   bool
 		fullscreen bool
 	)
 
@@ -169,7 +169,7 @@ func main() {
 
 	var txsSeen, txInBlockMin, txInBlockMax, currentHead, currentLib, seenBlocks int
 	p := message.NewPrinter(language.AmericanEnglish)
-	info := widget.NewLabelWithStyle("Showing last 0 Blocks", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	info := widget.NewLabelWithStyle("Patience: getting ABI information", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	blockInfo := widget.NewLabel("")
 	infoBox := widget.NewHBox(layout.NewSpacer(), info, blockInfo, layout.NewSpacer())
 	myWidth := monSize().Width
@@ -465,7 +465,7 @@ func main() {
 		monitorWindow.SetContent(content)
 		// give the API a few seconds to pull ABIs before we start.
 		for {
-			time.Sleep(200*time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 			if monitor.Abis != nil && monitor.Abis.Ready {
 				break
 			}
@@ -682,10 +682,10 @@ func main() {
 		}
 
 		scale := monitorWindow.Canvas().Scale()
-		x := int(float32(rect.Dx())*scale)
-		y := int(float32(rect.Dy())*scale)
+		x := int(float32(rect.Dx()) * scale)
+		y := int(float32(rect.Dy()) * scale)
 
-		monitorWindow.Resize(fyne.NewSize(x, (70*y)/100))
+		monitorWindow.Resize(fyne.NewSize(x, y-(y/4)))
 	}()
 
 	//monitorWindow.CenterOnScreen()
@@ -694,10 +694,14 @@ func main() {
 }
 
 func promptForUrl() (api *fio.API, p2pAddr string) {
+	errLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	a, p := monitor.GetHost()
 	submit := &widget.Button{}
 	p2pInput := widget.NewEntry()
 	p2pInput.SetPlaceHolder("nodeos:9876")
+	p2pInput.OnChanged = func(string) {
+		errLabel.SetText("")
+	}
 
 	uriInput := widget.NewEntry()
 	uriInput.SetPlaceHolder("http://nodeos:8888")
@@ -705,18 +709,17 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 	uriInput.SetText(a)
 	p2pInput.SetText(p)
 	uriInput.OnChanged = func(s string) {
+		errLabel.SetText("")
 		if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
 			if u := strings.Split(s, "//"); len(u) > 1 {
 				h := strings.Split(u[1], ":")
-				p2pInput.SetText(h[0]+":9876")
+				p2pInput.SetText(h[0] + ":9876")
 			}
 		}
 	}
 
-	errLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-
 	good := make(chan interface{}, 1)
-	submit = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), func(){
+	submit = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), func() {
 		errLabel.SetText("Please wait ...")
 		submit.Disable()
 		defer submit.Enable()
@@ -752,7 +755,7 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 		}
 		dest := net.ParseIP(ips[0])
 		t := &net.TCPConn{}
-		t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP:  dest, Port: int(port)})
+		t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP: dest, Port: int(port)})
 		if err != nil {
 			errLabel.SetText(fmt.Sprintf("could not connect to p2p service: %s", err.Error()))
 			return
@@ -762,14 +765,45 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 		close(good)
 	})
 
-	box := widget.NewVBox(
-		widget.NewForm(
-			widget.NewFormItem("API", uriInput),
-			widget.NewFormItem("P2P Address", p2pInput),
-		),
-		widget.NewHBox(layout.NewSpacer(), submit, layout.NewSpacer()),
-		errLabel,
-	)
+	randMain := widget.NewButton("Mainnet", func() {
+		errLabel.SetText("")
+		a, p, err := monitor.GetRandomHost(monitor.Mainnet)
+		if err != nil {
+			errLabel.SetText(err.Error())
+			return
+		}
+		uriInput.SetText(a)
+		p2pInput.SetText(p)
+	})
+	randTest := widget.NewButton("Testnet", func() {
+		errLabel.SetText("")
+		a, p, err := monitor.GetRandomHost(monitor.Testnet)
+		if err != nil {
+			errLabel.SetText(err.Error())
+			return
+		}
+		uriInput.SetText(a)
+		p2pInput.SetText(p)
+	})
+
+	i := &canvas.Image{}
+	i.Image, _, _ = fioassets.NewFioLogo()
+	box := widget.NewHBox(
+		fyne.NewContainerWithLayout(layout.NewFixedGridLayout(fyne.NewSize(256, 256)), i),
+		widget.NewVBox(
+			layout.NewSpacer(),
+			widget.NewForm(
+				widget.NewFormItem("API", uriInput),
+				widget.NewFormItem("P2P Address", p2pInput),
+			),
+			widget.NewHBox(layout.NewSpacer(), submit, layout.NewSpacer()),
+			errLabel,
+			layout.NewSpacer(),
+			widget.NewHBox(
+				widget.NewLabel("Find random hosts for network"), randMain, randTest, layout.NewSpacer(), widget.NewLabel("   "),
+			),
+			layout.NewSpacer(),
+		))
 	pop := widget.NewModalPopUp(box, fyne.CurrentApp().Driver().AllWindows()[0].Canvas())
 	pop.Show()
 	<-good
