@@ -1,4 +1,4 @@
-// +build android, darwin,arm
+// +build android, darwin,arm, linux,arm
 
 package fiowatch
 
