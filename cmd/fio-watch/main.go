@@ -21,7 +21,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,12 +50,14 @@ func main() {
 		impolite   bool
 		fullscreen bool
 		skipPrompt bool
+		imgSize int
 	)
 
 	flag.BoolVar(&impolite, "impolite", false, "use get_block instead of P2P, results in lots of API traffic")
 	flag.BoolVar(&fullscreen, "full", false, "start in full-screen mode")
 	flag.StringVar(&P2pNode, "p2p", "127.0.0.1:3856", "nodeos P2P endpoint")
 	flag.StringVar(&Uri, "u", "", "nodeos API endpoint")
+	flag.IntVar(&imgSize, "h", 256, "height of top pane containing image/pie/histogram")
 	flag.Parse()
 	if impolite {
 		P2pNode = ""
@@ -172,7 +173,7 @@ func main() {
 		return fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size()
 	}
 
-	var txsSeen, txInBlockMin, txInBlockMax, currentHead, currentLib, seenBlocks int
+	var txsSeen, txInBlockMax, currentHead, currentLib, seenBlocks int
 	p := message.NewPrinter(language.AmericanEnglish)
 	info := widget.NewLabelWithStyle("Patience: getting ABI information", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	blockInfo := widget.NewLabel("")
@@ -379,20 +380,7 @@ func main() {
 	}()
 
 	pieSize := func() int {
-		// an asinine assumption that we are on a small screen:
-		if runtime.GOARCH == "arm" {
-			return 128
-		}
-		return 256
-		// why isn't canvas working? Getting called too early? Why can't fyne just tell me what the desktop is?!?!? Dumb.
-		//switch true {
-		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 400:
-		//	return 128
-		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 600:
-		//	return 192
-		//default:
-		//	return 256
-		//}
+		return imgSize
 	}
 
 	sortedCopy := make([]*monitor.BlockSummary, 0)
@@ -549,8 +537,8 @@ func main() {
 							pieContainer.Refresh()
 						}
 
-						info.SetText(p.Sprintf("%d Transactions In Last %d Blocks.", txsSeen, seenBlocks))
-						blockInfo.SetText(p.Sprintf(" (Most in one block: %d, Least: %d) Current Head: %d, Last Irreversible: %d", txInBlockMin, txInBlockMax, currentHead, currentLib))
+						info.SetText(p.Sprintf("%d Tx In Last %d Blocks.", txsSeen, seenBlocks))
+						blockInfo.SetText(p.Sprintf(" (Most/block: %d) Head: %d, Irreversible: %d", txInBlockMax, currentHead, currentLib))
 
 						// detect size change, and handle new layout
 						if myWidth != monSize().Width {
@@ -609,23 +597,20 @@ func main() {
 		}
 	}()
 
-	txCount := func() (total int, most int, least int) {
-		var c, m, l int
+	txCount := func() (total int, most int) {
+		var c, m int
 		if len(getSummary()) < 2 {
-			return 0, 0, 0
+			return 0, 0
 		}
-		m, l = int(getSummary()[0].Y), int(getSummary()[0].Y)
+		m = int(getSummary()[0].Y)
 		for _, b := range getSummary() {
 			cur := int(math.Round(b.Y))
 			c = c + cur
 			if m < cur {
 				m = cur
 			}
-			if l > cur {
-				l = cur
-			}
 		}
-		return c, m, l
+		return c, m
 	}
 
 	go func() {
@@ -640,7 +625,7 @@ func main() {
 				if closed {
 					return
 				}
-				txsSeen, txInBlockMin, txInBlockMax = txCount()
+				txsSeen, txInBlockMax = txCount()
 				updateChartChan <- true
 			case <-blockTick.C:
 				if closed {
@@ -668,9 +653,8 @@ func main() {
 		}
 		th := prettyfyne.ExampleDracula
 		th.TextSize = 13
-		// FIXME: another asinine assumption.
-		if runtime.GOARCH == "arm" {
-			th.TextSize = 9
+		if imgSize < 256 {
+			th.TextSize = 10
 		}
 		th.PlaceHolderColor = color.RGBA{
 			R: 128,
@@ -695,10 +679,14 @@ func main() {
 		// without something in the window we can't calculate the canvas size,
 		monitorWindow.SetContent(widget.NewHBox(layout.NewSpacer()))
 
-		if fullscreen || rect.Dy() == 0 {
-			monitorWindow.SetFullScreen(true)
-			return
-		}
+		go func() {
+			// very lame. Some sort of data race causing wrong size. grr.
+			time.Sleep(time.Second)
+			if fullscreen || rect.Dy() == 0 {
+				monitorWindow.SetFullScreen(true)
+				return
+			}
+		}()
 
 		scale := monitorWindow.Canvas().Scale()
 		x := int(float32(rect.Dx()) * scale)
