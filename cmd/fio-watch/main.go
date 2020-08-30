@@ -21,6 +21,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ func main() {
 		err        error
 		impolite   bool
 		fullscreen bool
+		skipPrompt bool
 	)
 
 	flag.BoolVar(&impolite, "impolite", false, "use get_block instead of P2P, results in lots of API traffic")
@@ -58,6 +60,9 @@ func main() {
 	flag.Parse()
 	if impolite {
 		P2pNode = ""
+	}
+	if Uri != "" {
+		skipPrompt = true
 	}
 
 	rect := monitor.Scale()
@@ -247,11 +252,16 @@ func main() {
 	go func() {
 		defer allDone.Done()
 		<-wRunning
-		if Uri == "" {
+		if Uri == "" || !skipPrompt {
 			go func() {
 				api, P2pNode = promptForUrl()
 				Uri = api.BaseURL
 			}()
+		} else {
+			api, _, err = fio.NewConnection(nil, Uri)
+			if err != nil {
+				return
+			}
 		}
 		for {
 			if api != nil {
@@ -369,7 +379,12 @@ func main() {
 	}()
 
 	pieSize := func() int {
+		// an asinine assumption that we are on a small screen:
+		if runtime.GOARCH == "arm" {
+			return 128
+		}
 		return 256
+		// why isn't canvas working? Getting called too early? Why can't fyne just tell me what the desktop is?!?!? Dumb.
 		//switch true {
 		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 400:
 		//	return 128
@@ -653,6 +668,10 @@ func main() {
 		}
 		th := prettyfyne.ExampleDracula
 		th.TextSize = 13
+		// FIXME: another asinine assumption.
+		if runtime.GOARCH == "arm" {
+			th.TextSize = 9
+		}
 		th.PlaceHolderColor = color.RGBA{
 			R: 128,
 			G: 128,
