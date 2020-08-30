@@ -34,6 +34,7 @@ var (
 )
 
 func main() {
+	log.SetFlags(log.Lshortfile|log.LstdFlags|log.LUTC)
 	monitorTitle := "FIO Block Activity Summary"
 
 	ErrChan := make(chan string)
@@ -57,7 +58,7 @@ func main() {
 	flag.BoolVar(&fullscreen, "full", false, "start in full-screen mode")
 	flag.StringVar(&P2pNode, "p2p", "127.0.0.1:3856", "nodeos P2P endpoint")
 	flag.StringVar(&Uri, "u", "", "nodeos API endpoint")
-	flag.IntVar(&imgSize, "h", 256, "height of top pane containing image/pie/histogram")
+	flag.IntVar(&imgSize, "p", 256, "pixel (height) of top pane containing image/pie/histogram")
 	flag.Parse()
 	if impolite {
 		P2pNode = ""
