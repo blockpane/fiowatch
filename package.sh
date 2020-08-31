@@ -2,6 +2,10 @@
 
 VER=$(git describe --tags --always --long)
 
+# this is screwed up, somehow go mod keeps wanting to pull this back to an
+# earlier version. pfft. Force it to update to the correct version
+go get github.com/wcharczuk/go-chart@2d5aeaf824f4b3be7c0b27ea89327eeff6b6e93a
+
 # first some standard packages:
 fyne-cross windows -arch 386 -output fiowatch-${VER}-386.exe cmd/fio-watch/main.go
 fyne-cross windows -output fiowatch-${VER}-amd64.exe cmd/fio-watch/main.go
