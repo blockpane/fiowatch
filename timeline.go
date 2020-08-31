@@ -29,11 +29,11 @@ func LineChart(summary BlockSummarys, lightTheme bool, w int, h int) []byte {
 	style.StrokeWidth = 2.5
 	switch lightTheme {
 	case true:
-		style.FillColor = drawing.Color{R: 17, G: 100, B: 138, A: 128}
 		style.StrokeColor = drawing.Color{R: 65, G: 65, B: 156, A: 64}
+		style.FillColor = drawing.Color{R: 0x0c, G: 0x078, B: 0x9b, A: 255}
 	case false:
 		style.StrokeColor = drawing.Color{R: 65, G: 65, B: 156, A: 192}
-		style.FillColor = drawing.Color{R: 23, G: 11, B: 64, A: 224}
+		style.FillColor = drawing.Color{R: 17, G: 100, B: 138, A: 128}
 	}
 
 	fc := drawing.ColorWhite

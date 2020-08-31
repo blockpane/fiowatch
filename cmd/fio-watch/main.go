@@ -693,7 +693,7 @@ func main() {
 		x := int(float32(rect.Dx()) * scale)
 		y := int(float32(rect.Dy()) * scale)
 
-		monitorWindow.Resize(fyne.NewSize(x, y-(y/4)))
+		monitorWindow.Resize(fyne.NewSize(x-(x/4), y-(y/4)))
 	}()
 
 	//monitorWindow.CenterOnScreen()
