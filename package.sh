@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# first some standard packages:
+fyne-cross windows -arch 386 -output fiowatch-386.exe cmd/fio-watch/main.go
+fyne-cross windows -output fiowatch-amd64.exe cmd/fio-watch/main.go
+fyne-cross linux -output fiowatch-linux-amd64 cmd/fio-watch/main.go
+fyne-cross linux -arch 386 -output fiowatch-linux-x86 cmd/fio-watch/main.go
+
 export CGO_CFLAGS="-mmacosx-version-min=10.14"
 export CGO_LDFLAGS="-mmacosx-version-min=10.14"
 # builds a macos package (.app) and places it inside a .dmg
@@ -23,4 +29,5 @@ popd
 
 rm -fr "package/FIO Watch"
 open "package/FIO Watch.dmg"
+open fyne-cross/dist
 
