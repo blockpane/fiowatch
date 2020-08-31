@@ -1,10 +1,12 @@
 #!/bin/bash
 
+VER=$(git describe --tags --always --long)
+
 # first some standard packages:
-fyne-cross windows -arch 386 -output fiowatch-386.exe cmd/fio-watch/main.go
-fyne-cross windows -output fiowatch-amd64.exe cmd/fio-watch/main.go
-fyne-cross linux -output fiowatch-linux-amd64 cmd/fio-watch/main.go
-fyne-cross linux -arch 386 -output fiowatch-linux-x86 cmd/fio-watch/main.go
+fyne-cross windows -arch 386 -output fiowatch-${VER}-386.exe cmd/fio-watch/main.go
+fyne-cross windows -output fiowatch-${VER}-amd64.exe cmd/fio-watch/main.go
+fyne-cross linux -output fiowatch-${VER}-linux-amd64 cmd/fio-watch/main.go
+fyne-cross linux -arch 386 -output fiowatch-${VER}-linux-x86 cmd/fio-watch/main.go
 
 export CGO_CFLAGS="-mmacosx-version-min=10.14"
 export CGO_LDFLAGS="-mmacosx-version-min=10.14"
@@ -24,10 +26,10 @@ sed -i'' -e 's/.string.1\.0.\/string./\<string>'$(git describe --tags --always -
 
 rm -f cmd/fio-watch/fio-watch
 pushd package
-hdiutil create -srcfolder "FIO Watch" "FIO Watch.dmg"
+hdiutil create -srcfolder "FIO Watch" "FIO Watch ${VER}.dmg"
 popd
 
 rm -fr "package/FIO Watch"
-open "package/FIO Watch.dmg"
+open "package/FIO Watch ${VER}.dmg"
 open fyne-cross/dist
 
