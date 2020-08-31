@@ -1,4 +1,4 @@
-// +build !android, darwin,!arm
+// +build !arm
 
 package fiowatch
 
@@ -18,3 +18,4 @@ func Scale() image.Rectangle {
 	}
 	return rect
 }
+

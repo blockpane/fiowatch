@@ -242,7 +242,7 @@ func (labels *DetailsContent) UpdateContent(rows chan *ActionRow, done chan bool
 					ar := <-queue
 					labels.Push(func(ar *ActionRow) [5]fyne.CanvasObject {
 						newTopRow := [5]fyne.CanvasObject{}
-						newTopRow[0] = widget.NewLabel(fmt.Sprintf("%d @ %s", ar.BlockNum, ar.Time.Format(time.UnixDate)))
+						newTopRow[0] = widget.NewLabel(fmt.Sprintf("%d @ %s", ar.BlockNum, ar.Time.Format("15:04:05.000 -0700")))
 						newTopRow[1] = fyne.NewContainerWithLayout(layout.NewGridLayout(2),
 							widget.NewLabelWithStyle(ar.Contract, fyne.TextAlignTrailing, fyne.TextStyle{}),
 							widget.NewLabelWithStyle(ar.Action, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
