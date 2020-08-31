@@ -21,7 +21,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +34,7 @@ var (
 )
 
 func main() {
+	log.SetFlags(log.Lshortfile|log.LstdFlags|log.LUTC)
 	monitorTitle := "FIO Block Activity Summary"
 
 	ErrChan := make(chan string)
@@ -45,18 +45,20 @@ func main() {
 	}()
 
 	var (
-		api *fio.API
-		opts *fio.TxOptions
-		err error
-		impolite bool
+		api        *fio.API
+		opts       *fio.TxOptions
+		err        error
+		impolite   bool
 		fullscreen bool
 		skipPrompt bool
+		imgSize int
 	)
 
 	flag.BoolVar(&impolite, "impolite", false, "use get_block instead of P2P, results in lots of API traffic")
 	flag.BoolVar(&fullscreen, "full", false, "start in full-screen mode")
 	flag.StringVar(&P2pNode, "p2p", "127.0.0.1:3856", "nodeos P2P endpoint")
 	flag.StringVar(&Uri, "u", "", "nodeos API endpoint")
+	flag.IntVar(&imgSize, "p", 256, "pixel (height) of top pane containing image/pie/histogram")
 	flag.Parse()
 	if impolite {
 		P2pNode = ""
@@ -172,9 +174,9 @@ func main() {
 		return fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size()
 	}
 
-	var txsSeen, txInBlockMin, txInBlockMax, currentHead, currentLib, seenBlocks int
+	var txsSeen, txInBlockMax, currentHead, currentLib, seenBlocks int
 	p := message.NewPrinter(language.AmericanEnglish)
-	info := widget.NewLabelWithStyle("Showing last 0 Blocks", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	info := widget.NewLabelWithStyle("Patience: getting ABI information", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	blockInfo := widget.NewLabel("")
 	infoBox := widget.NewHBox(layout.NewSpacer(), info, blockInfo, layout.NewSpacer())
 	myWidth := monSize().Width
@@ -379,20 +381,7 @@ func main() {
 	}()
 
 	pieSize := func() int {
-		// an asinine assumption that we are on a small screen:
-		if runtime.GOARCH == "arm" {
-			return 128
-		}
-		return 256
-		// why isn't canvas working? Getting called too early? Why can't fyne just tell me what the desktop is?!?!? Dumb.
-		//switch true {
-		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 400:
-		//	return 128
-		//case me.Driver().AllWindows()[0].Canvas().Size().Width <= 600:
-		//	return 192
-		//default:
-		//	return 256
-		//}
+		return imgSize
 	}
 
 	sortedCopy := make([]*monitor.BlockSummary, 0)
@@ -480,7 +469,7 @@ func main() {
 		monitorWindow.SetContent(content)
 		// give the API a few seconds to pull ABIs before we start.
 		for {
-			time.Sleep(200*time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 			if monitor.Abis != nil && monitor.Abis.Ready {
 				break
 			}
@@ -549,8 +538,8 @@ func main() {
 							pieContainer.Refresh()
 						}
 
-						info.SetText(p.Sprintf("%d Transactions In Last %d Blocks.", txsSeen, seenBlocks))
-						blockInfo.SetText(p.Sprintf(" (Most in one block: %d, Least: %d) Current Head: %d, Last Irreversible: %d", txInBlockMin, txInBlockMax, currentHead, currentLib))
+						info.SetText(p.Sprintf("%d Tx In Last %d Blocks.", txsSeen, seenBlocks))
+						blockInfo.SetText(p.Sprintf(" (Most/block: %d) Head: %d, Irreversible: %d", txInBlockMax, currentHead, currentLib))
 
 						// detect size change, and handle new layout
 						if myWidth != monSize().Width {
@@ -609,23 +598,20 @@ func main() {
 		}
 	}()
 
-	txCount := func() (total int, most int, least int) {
-		var c, m, l int
+	txCount := func() (total int, most int) {
+		var c, m int
 		if len(getSummary()) < 2 {
-			return 0, 0, 0
+			return 0, 0
 		}
-		m, l = int(getSummary()[0].Y), int(getSummary()[0].Y)
+		m = int(getSummary()[0].Y)
 		for _, b := range getSummary() {
 			cur := int(math.Round(b.Y))
 			c = c + cur
 			if m < cur {
 				m = cur
 			}
-			if l > cur {
-				l = cur
-			}
 		}
-		return c, m, l
+		return c, m
 	}
 
 	go func() {
@@ -640,7 +626,7 @@ func main() {
 				if closed {
 					return
 				}
-				txsSeen, txInBlockMin, txInBlockMax = txCount()
+				txsSeen, txInBlockMax = txCount()
 				updateChartChan <- true
 			case <-blockTick.C:
 				if closed {
@@ -668,9 +654,8 @@ func main() {
 		}
 		th := prettyfyne.ExampleDracula
 		th.TextSize = 13
-		// FIXME: another asinine assumption.
-		if runtime.GOARCH == "arm" {
-			th.TextSize = 9
+		if imgSize < 256 {
+			th.TextSize = 10
 		}
 		th.PlaceHolderColor = color.RGBA{
 			R: 128,
@@ -695,16 +680,20 @@ func main() {
 		// without something in the window we can't calculate the canvas size,
 		monitorWindow.SetContent(widget.NewHBox(layout.NewSpacer()))
 
-		if fullscreen || rect.Dy() == 0 {
-			monitorWindow.SetFullScreen(true)
-			return
-		}
+		go func() {
+			// very lame. Some sort of data race causing wrong size. grr.
+			time.Sleep(time.Second)
+			if fullscreen || rect.Dy() == 0 {
+				monitorWindow.SetFullScreen(true)
+				return
+			}
+		}()
 
 		scale := monitorWindow.Canvas().Scale()
-		x := int(float32(rect.Dx())*scale)
-		y := int(float32(rect.Dy())*scale)
+		x := int(float32(rect.Dx()) * scale)
+		y := int(float32(rect.Dy()) * scale)
 
-		monitorWindow.Resize(fyne.NewSize(x, (70*y)/100))
+		monitorWindow.Resize(fyne.NewSize(x, y-(y/4)))
 	}()
 
 	//monitorWindow.CenterOnScreen()
@@ -713,10 +702,14 @@ func main() {
 }
 
 func promptForUrl() (api *fio.API, p2pAddr string) {
+	errLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	a, p := monitor.GetHost()
 	submit := &widget.Button{}
 	p2pInput := widget.NewEntry()
 	p2pInput.SetPlaceHolder("nodeos:9876")
+	p2pInput.OnChanged = func(string) {
+		errLabel.SetText("")
+	}
 
 	uriInput := widget.NewEntry()
 	uriInput.SetPlaceHolder("http://nodeos:8888")
@@ -724,18 +717,17 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 	uriInput.SetText(a)
 	p2pInput.SetText(p)
 	uriInput.OnChanged = func(s string) {
+		errLabel.SetText("")
 		if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
 			if u := strings.Split(s, "//"); len(u) > 1 {
 				h := strings.Split(u[1], ":")
-				p2pInput.SetText(h[0]+":9876")
+				p2pInput.SetText(h[0] + ":9876")
 			}
 		}
 	}
 
-	errLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-
 	good := make(chan interface{}, 1)
-	submit = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), func(){
+	submit = widget.NewButtonWithIcon("Connect", theme.ConfirmIcon(), func() {
 		errLabel.SetText("Please wait ...")
 		submit.Disable()
 		defer submit.Enable()
@@ -771,7 +763,7 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 		}
 		dest := net.ParseIP(ips[0])
 		t := &net.TCPConn{}
-		t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP:  dest, Port: int(port)})
+		t, err = net.DialTCP("tcp4", nil, &net.TCPAddr{IP: dest, Port: int(port)})
 		if err != nil {
 			errLabel.SetText(fmt.Sprintf("could not connect to p2p service: %s", err.Error()))
 			return
@@ -781,14 +773,45 @@ func promptForUrl() (api *fio.API, p2pAddr string) {
 		close(good)
 	})
 
-	box := widget.NewVBox(
-		widget.NewForm(
-			widget.NewFormItem("API", uriInput),
-			widget.NewFormItem("P2P Address", p2pInput),
-		),
-		widget.NewHBox(layout.NewSpacer(), submit, layout.NewSpacer()),
-		errLabel,
-	)
+	randMain := widget.NewButton("Mainnet", func() {
+		errLabel.SetText("")
+		a, p, err := monitor.GetRandomHost(monitor.Mainnet)
+		if err != nil {
+			errLabel.SetText(err.Error())
+			return
+		}
+		uriInput.SetText(a)
+		p2pInput.SetText(p)
+	})
+	randTest := widget.NewButton("Testnet", func() {
+		errLabel.SetText("")
+		a, p, err := monitor.GetRandomHost(monitor.Testnet)
+		if err != nil {
+			errLabel.SetText(err.Error())
+			return
+		}
+		uriInput.SetText(a)
+		p2pInput.SetText(p)
+	})
+
+	i := &canvas.Image{}
+	i.Image, _, _ = fioassets.NewFioLogo()
+	box := widget.NewHBox(
+		fyne.NewContainerWithLayout(layout.NewFixedGridLayout(fyne.NewSize(256, 256)), i),
+		widget.NewVBox(
+			layout.NewSpacer(),
+			widget.NewForm(
+				widget.NewFormItem("API", uriInput),
+				widget.NewFormItem("P2P Address", p2pInput),
+			),
+			widget.NewHBox(layout.NewSpacer(), submit, layout.NewSpacer()),
+			errLabel,
+			layout.NewSpacer(),
+			widget.NewHBox(
+				widget.NewLabel("Find random hosts for network"), randMain, randTest, layout.NewSpacer(), widget.NewLabel("   "),
+			),
+			layout.NewSpacer(),
+		))
 	pop := widget.NewModalPopUp(box, fyne.CurrentApp().Driver().AllWindows()[0].Canvas())
 	pop.Show()
 	<-good
