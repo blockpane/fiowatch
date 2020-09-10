@@ -8,7 +8,7 @@ A simple near-real-time (GUI) monitor of FIO transactions. It is *not* finished 
 
 1. [install](https://golang.org/dl/) Go v1.14 or later.
 1. get the os-specific [dependencies to build](https://developer.fyne.io/started/) a Fyne application
-1. run `go install github.com/frameloss/fiowatch/...`
+1. run `go install github.com/blockpane/fiowatch/...`
 1. launch with `~/go/bin/fio-watch -u http://nodeos.local:8888 -p2p nodeos.local:9876`
 
 ## Why is this special, what's the upside?

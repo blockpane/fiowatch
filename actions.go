@@ -2,7 +2,7 @@ package fiowatch
 
 import (
 	"bytes"
-	"github.com/frameloss/fiowatch/assets"
+	"github.com/blockpane/fiowatch/assets"
 	"github.com/wcharczuk/go-chart"
 	"image"
 )

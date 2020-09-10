@@ -10,10 +10,10 @@ import (
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
+	monitor "github.com/blockpane/fiowatch"
+	"github.com/blockpane/fiowatch/assets"
+	"github.com/blockpane/prettyfyne"
 	"github.com/fioprotocol/fio-go"
-	monitor "github.com/frameloss/fiowatch"
-	"github.com/frameloss/fiowatch/assets"
-	"github.com/frameloss/prettyfyne"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"image/color"
@@ -68,7 +68,7 @@ func main() {
 	}
 
 	rect := monitor.Scale()
-	me := app.NewWithID("org.frameloss.fiowatch")
+	me := app.NewWithID("com.blockpane.fiowatch")
 	monitorWindow := me.NewWindow(monitorTitle)
 
 	go func() {
