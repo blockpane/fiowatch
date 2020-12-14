@@ -689,9 +689,8 @@ func main() {
 			}
 		}()
 
-		scale := monitorWindow.Canvas().Scale()
-		x := int(float32(rect.Dx()) * scale)
-		y := int(float32(rect.Dy()) * scale)
+		x := int(float32(rect.Dx()))
+		y := int(float32((rect.Dy() * 75) / 100))
 
 		monitorWindow.Resize(fyne.NewSize(x-(x/4), y-(y/4)))
 	}()
