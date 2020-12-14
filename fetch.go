@@ -36,6 +36,7 @@ func (t ActionRow) String() string {
 var (
 	knownAddresses *addressCache
 	Abis           *abiCache
+	Api            *fio.API
 )
 
 func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string, p2pnode string) {
@@ -67,19 +68,25 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 			}
 		}
 	}()
-	api, opts, err := fio.NewConnection(nil, url)
-	if err != nil {
-		log.Println(err)
-		return
+	var opts *fio.TxOptions
+	var err error
+	if Api == nil {
+		Api, opts, err = fio.NewConnection(nil, url)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
-	Abis, err = newAbiCache(api)
-	if err != nil {
-		log.Println(err)
-		return
+	if Abis == nil {
+		Abis, err = newAbiCache(Api)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 
-	api.Header.Set("User-Agent", "fio-watch")
-	knownAddresses, err = newAddressCache(api)
+	Api.Header.Set("User-Agent", "fio-watch")
+	knownAddresses, err = newAddressCache(Api)
 	if err != nil {
 		log.Println(err)
 		return
@@ -162,7 +169,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	case "":
 		wg.Add(workers)
 		for i := 0; i < workers; i++ {
-			go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
+			go getBlock(fetchQueue, quitting, blockResult, &seen, wg, Api.BaseURL)
 		}
 
 		go func() {
@@ -175,7 +182,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 				}
 				wg.Add(workers)
 				for i := 0; i < workers; i++ {
-					go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
+					go getBlock(fetchQueue, quitting, blockResult, &seen, wg, Api.BaseURL)
 				}
 			}
 		}()
@@ -259,7 +266,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 				seen.sent[incoming.BlockNum] = true
 				seen.sentMux.Unlock()
 				go func() {
-					res, actions := blockToSummary(incoming, api)
+					res, actions := blockToSummary(incoming, Api)
 					summary <- res
 					if highestFetched-incoming.BlockNum > 30 && p2pnode == "" {
 						slow <- true
@@ -297,7 +304,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 		return
 	}
 	lastHeartBeat := time.Now()
-	tickApi, _, _ := fio.NewConnection(nil, api.BaseURL)
+	tickApi, _, _ := fio.NewConnection(nil, Api.BaseURL)
 	//tickApi.HttpClient.Timeout = time.Second
 	tickApi.Header.Set("User-Agent", "fio-watch")
 	for {
