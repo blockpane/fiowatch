@@ -9,6 +9,7 @@ import (
 	"github.com/wcharczuk/go-chart/v2/drawing"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	"log"
 	"math"
 	"time"
 )
@@ -91,8 +92,12 @@ func LineChart(summary BlockSummarys, lightTheme bool, w int, h int) []byte {
 
 	buffer := bytes.NewBuffer([]byte{})
 	if e := graph.Render(chart.PNG, buffer); e != nil {
-		if e.Error() != "zero y-range delta" {
-			fmt.Println("render: ", e)
+		switch e.Error() {
+		case "infinite x-range delta", "zero y-range delta":
+			break
+		default:
+			log.Println("render: ", e)
+
 		}
 	}
 	return buffer.Bytes()
