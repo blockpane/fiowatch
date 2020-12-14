@@ -174,7 +174,7 @@ func main() {
 		return fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size()
 	}
 
-	var txsSeen, txInBlockMax, currentHead, currentLib, seenBlocks int
+	var txsSeen, txInBlockMax, currentHead, currentLib, seenSeconds int
 	p := message.NewPrinter(language.AmericanEnglish)
 	info := widget.NewLabelWithStyle("Patience: getting ABI information", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	blockInfo := widget.NewLabel("")
@@ -538,7 +538,7 @@ func main() {
 							pieContainer.Refresh()
 						}
 
-						info.SetText(p.Sprintf("%d Tx In Last %d Blocks.", txsSeen, seenBlocks))
+						info.SetText(p.Sprintf("%d Tx In Last %d Seconds.", txsSeen, seenSeconds))
 						blockInfo.SetText(p.Sprintf(" (Most/block: %d) Head: %d, Irreversible: %d", txInBlockMax, currentHead, currentLib))
 
 						// detect size change, and handle new layout
@@ -618,7 +618,8 @@ func main() {
 		<-wRunning
 		updateChartChan <- true
 		//defer log.Println("routine with tickers triggering refreshes exited.")
-		blockTick := time.NewTicker(500 * time.Millisecond)
+		//blockTick := time.NewTicker(500 * time.Millisecond)
+		blockTick := time.NewTicker(time.Second)
 		t := time.NewTicker(500 * time.Millisecond)
 		for {
 			select {
@@ -633,8 +634,8 @@ func main() {
 					return
 				}
 				startBlock = startBlock + 1
-				if seenBlocks < ticks {
-					seenBlocks = seenBlocks + 1
+				if seenSeconds < ticks / 2 {
+					seenSeconds += 1
 				}
 			}
 		}
