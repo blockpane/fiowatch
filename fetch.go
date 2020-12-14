@@ -182,42 +182,59 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	// allow p2p node to send blocks:
 	default:
 		go func() {
-			client := p2p.NewClient(
-				p2p.NewOutgoingPeer(p2pnode, "fiowatch", &p2p.HandshakeInfo{
+			for {
+				peer := p2p.NewOutgoingPeer(p2pnode, "fiowatch", &p2p.HandshakeInfo{
 					ChainID:      opts.ChainID,
 					HeadBlockNum: 1,
-				}),
-				false,
-			)
-			blockHandler := p2p.HandlerFunc(func(envelope *p2p.Envelope) {
-				name, _ := envelope.Packet.Type.Name()
-				switch name {
-				case "SignedBlock":
-					block := &eos.SignedBlock{}
-					err := eos.UnmarshalBinary(envelope.Packet.Payload, block)
-					if err != nil {
-						fmt.Println(string(envelope.Packet.Payload))
-						log.Println(err)
-						return
+				})
+				client := p2p.NewClient(
+					peer,
+					false,
+				)
+				var curBlock, lastBlock uint32
+				go func() {
+					for {
+						time.Sleep(5*time.Second)
+						if curBlock <= lastBlock || peer.SendTime() != nil {
+							err = client.CloseConnection()
+							if err != nil {
+								fmt.Println(err)
+							}
+							return
+						}
 					}
-					id, _ := block.BlockID()
-					_, prefix, _ := fio.GetRefBlockFor(block.BlockNumber(), id.String())
-					head <- int(block.BlockNumber())
-					blockResult <- &eos.BlockResp{
-						SignedBlock:    *block,
-						ID:             id,
-						BlockNum:       block.BlockNumber(),
-						RefBlockPrefix: prefix,
+				}()
+				blockHandler := p2p.HandlerFunc(func(envelope *p2p.Envelope) {
+					name, _ := envelope.Packet.Type.Name()
+					switch name {
+					case "SignedBlock":
+						block := &eos.SignedBlock{}
+						err := eos.UnmarshalBinary(envelope.Packet.Payload, block)
+						if err != nil {
+							fmt.Println(string(envelope.Packet.Payload))
+							log.Println(err)
+							return
+						}
+						id, _ := block.BlockID()
+						_, prefix, _ := fio.GetRefBlockFor(block.BlockNumber(), id.String())
+						head <- int(block.BlockNumber())
+						curBlock = block.BlockNumber()
+						blockResult <- &eos.BlockResp{
+							SignedBlock:    *block,
+							ID:             id,
+							BlockNum:       block.BlockNumber(),
+							RefBlockPrefix: prefix,
+						}
+						block = nil
 					}
-					block = nil
+				})
+				client.SetReadTimeout(3*time.Second)
+				client.RegisterHandler(blockHandler)
+				e := client.Start()
+				if e != nil {
+					log.Println(e)
+					time.Sleep(time.Second)
 				}
-			})
-			client.RegisterHandler(blockHandler)
-			e := client.Start()
-			if e != nil {
-				log.Println(e)
-				notifyQuitting()
-				return
 			}
 		}()
 	}
