@@ -10,10 +10,10 @@ import (
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
+	monitor "github.com/blockpane/fiowatch"
+	"github.com/blockpane/fiowatch/assets"
+	"github.com/blockpane/prettyfyne"
 	"github.com/fioprotocol/fio-go"
-	monitor "github.com/frameloss/fiowatch"
-	"github.com/frameloss/fiowatch/assets"
-	"github.com/frameloss/prettyfyne"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"image/color"
@@ -68,7 +68,7 @@ func main() {
 	}
 
 	rect := monitor.Scale()
-	me := app.NewWithID("org.frameloss.fiowatch")
+	me := app.NewWithID("com.blockpane.fiowatch")
 	monitorWindow := me.NewWindow(monitorTitle)
 
 	go func() {
@@ -174,7 +174,7 @@ func main() {
 		return fyne.CurrentApp().Driver().AllWindows()[0].Canvas().Size()
 	}
 
-	var txsSeen, txInBlockMax, currentHead, currentLib, seenBlocks int
+	var txsSeen, txInBlockMax, currentHead, currentLib, seenSeconds int
 	p := message.NewPrinter(language.AmericanEnglish)
 	info := widget.NewLabelWithStyle("Patience: getting ABI information", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	blockInfo := widget.NewLabel("")
@@ -538,7 +538,7 @@ func main() {
 							pieContainer.Refresh()
 						}
 
-						info.SetText(p.Sprintf("%d Tx In Last %d Blocks.", txsSeen, seenBlocks))
+						info.SetText(p.Sprintf("%d Tx In Last %d Seconds.", txsSeen, seenSeconds))
 						blockInfo.SetText(p.Sprintf(" (Most/block: %d) Head: %d, Irreversible: %d", txInBlockMax, currentHead, currentLib))
 
 						// detect size change, and handle new layout
@@ -618,7 +618,8 @@ func main() {
 		<-wRunning
 		updateChartChan <- true
 		//defer log.Println("routine with tickers triggering refreshes exited.")
-		blockTick := time.NewTicker(500 * time.Millisecond)
+		//blockTick := time.NewTicker(500 * time.Millisecond)
+		blockTick := time.NewTicker(time.Second)
 		t := time.NewTicker(500 * time.Millisecond)
 		for {
 			select {
@@ -633,8 +634,8 @@ func main() {
 					return
 				}
 				startBlock = startBlock + 1
-				if seenBlocks < ticks {
-					seenBlocks = seenBlocks + 1
+				if seenSeconds < ticks / 2 {
+					seenSeconds += 1
 				}
 			}
 		}
@@ -689,9 +690,8 @@ func main() {
 			}
 		}()
 
-		scale := monitorWindow.Canvas().Scale()
-		x := int(float32(rect.Dx()) * scale)
-		y := int(float32(rect.Dy()) * scale)
+		x := int(float32(rect.Dx()))
+		y := int(float32((rect.Dy() * 75) / 100))
 
 		monitorWindow.Resize(fyne.NewSize(x-(x/4), y-(y/4)))
 	}()

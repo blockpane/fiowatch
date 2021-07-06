@@ -14,7 +14,7 @@ type savedHost struct {
 	P2p string `json:"p2p"`
 }
 
-const settingsDir = "org.frameloss.fiowatch"
+const settingsDir = "com.blockpane.fiowatch"
 
 // SaveHost tries to save the connection details for next start, best effort only
 func SaveHost(apiUrl string, p2p string) {

@@ -36,6 +36,7 @@ func (t ActionRow) String() string {
 var (
 	knownAddresses *addressCache
 	Abis           *abiCache
+	Api            *fio.API
 )
 
 func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan bool, head chan int, lib chan int, diedChan chan bool, heartBeat chan time.Time, slow chan bool, url string, p2pnode string) {
@@ -67,19 +68,25 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 			}
 		}
 	}()
-	api, opts, err := fio.NewConnection(nil, url)
-	if err != nil {
-		log.Println(err)
-		return
+	var opts *fio.TxOptions
+	var err error
+	if Api == nil {
+		Api, opts, err = fio.NewConnection(nil, url)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
-	Abis, err = newAbiCache(api)
-	if err != nil {
-		log.Println(err)
-		return
+	if Abis == nil {
+		Abis, err = newAbiCache(Api)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 
-	api.Header.Set("User-Agent", "fio-watch")
-	knownAddresses, err = newAddressCache(api)
+	Api.Header.Set("User-Agent", "fio-watch")
+	knownAddresses, err = newAddressCache(Api)
 	if err != nil {
 		log.Println(err)
 		return
@@ -162,7 +169,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 	case "":
 		wg.Add(workers)
 		for i := 0; i < workers; i++ {
-			go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
+			go getBlock(fetchQueue, quitting, blockResult, &seen, wg, Api.BaseURL)
 		}
 
 		go func() {
@@ -175,49 +182,66 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 				}
 				wg.Add(workers)
 				for i := 0; i < workers; i++ {
-					go getBlock(fetchQueue, quitting, blockResult, &seen, wg, api.BaseURL)
+					go getBlock(fetchQueue, quitting, blockResult, &seen, wg, Api.BaseURL)
 				}
 			}
 		}()
 	// allow p2p node to send blocks:
 	default:
 		go func() {
-			client := p2p.NewClient(
-				p2p.NewOutgoingPeer(p2pnode, "fiowatch", &p2p.HandshakeInfo{
+			for {
+				peer := p2p.NewOutgoingPeer(p2pnode, "fiowatch", &p2p.HandshakeInfo{
 					ChainID:      opts.ChainID,
 					HeadBlockNum: 1,
-				}),
-				false,
-			)
-			blockHandler := p2p.HandlerFunc(func(envelope *p2p.Envelope) {
-				name, _ := envelope.Packet.Type.Name()
-				switch name {
-				case "SignedBlock":
-					block := &eos.SignedBlock{}
-					err := eos.UnmarshalBinary(envelope.Packet.Payload, block)
-					if err != nil {
-						fmt.Println(string(envelope.Packet.Payload))
-						log.Println(err)
-						return
+				})
+				client := p2p.NewClient(
+					peer,
+					false,
+				)
+				var curBlock, lastBlock uint32
+				go func() {
+					for {
+						time.Sleep(5*time.Second)
+						if curBlock <= lastBlock || peer.SendTime() != nil {
+							err = client.CloseConnection()
+							if err != nil {
+								fmt.Println(err)
+							}
+							return
+						}
 					}
-					id, _ := block.BlockID()
-					_, prefix, _ := fio.GetRefBlockFor(block.BlockNumber(), id.String())
-					head <- int(block.BlockNumber())
-					blockResult <- &eos.BlockResp{
-						SignedBlock:    *block,
-						ID:             id,
-						BlockNum:       block.BlockNumber(),
-						RefBlockPrefix: prefix,
+				}()
+				blockHandler := p2p.HandlerFunc(func(envelope *p2p.Envelope) {
+					name, _ := envelope.Packet.Type.Name()
+					switch name {
+					case "SignedBlock":
+						block := &eos.SignedBlock{}
+						err := eos.UnmarshalBinary(envelope.Packet.Payload, block)
+						if err != nil {
+							fmt.Println(string(envelope.Packet.Payload))
+							log.Println(err)
+							return
+						}
+						id, _ := block.BlockID()
+						_, prefix, _ := fio.GetRefBlockFor(block.BlockNumber(), id.String())
+						head <- int(block.BlockNumber())
+						curBlock = block.BlockNumber()
+						blockResult <- &eos.BlockResp{
+							SignedBlock:    *block,
+							ID:             id,
+							BlockNum:       block.BlockNumber(),
+							RefBlockPrefix: prefix,
+						}
+						block = nil
 					}
-					block = nil
+				})
+				client.SetReadTimeout(3*time.Second)
+				client.RegisterHandler(blockHandler)
+				e := client.Start()
+				if e != nil {
+					log.Println(e)
+					time.Sleep(time.Second)
 				}
-			})
-			client.RegisterHandler(blockHandler)
-			e := client.Start()
-			if e != nil {
-				log.Println(e)
-				notifyQuitting()
-				return
 			}
 		}()
 	}
@@ -242,7 +266,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 				seen.sent[incoming.BlockNum] = true
 				seen.sentMux.Unlock()
 				go func() {
-					res, actions := blockToSummary(incoming, api)
+					res, actions := blockToSummary(incoming, Api)
 					summary <- res
 					if highestFetched-incoming.BlockNum > 30 && p2pnode == "" {
 						slow <- true
@@ -280,7 +304,7 @@ func WatchBlocks(summary chan *BlockSummary, details chan *ActionRow, quit chan 
 		return
 	}
 	lastHeartBeat := time.Now()
-	tickApi, _, _ := fio.NewConnection(nil, api.BaseURL)
+	tickApi, _, _ := fio.NewConnection(nil, Api.BaseURL)
 	//tickApi.HttpClient.Timeout = time.Second
 	tickApi.Header.Set("User-Agent", "fio-watch")
 	for {
